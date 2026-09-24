@@ -1,92 +1,120 @@
-# CoIn (Continuous Inference) Laser Stimulus Generator (Python version)
+# CoIn (Continuous Inference) Laser Stimulus Generator — Ambiguous Conditions
 
-Python translation of the original MATLAB stimulus generation codebase for the Peduks study's continuous laser task. This package generates stimulus sequences with block-wise volatility and noise manipulation for use with the coin task (Save-the-World-Task).
+Python code for generating stimulus sequences for the continuous laser task (coin task / Save-the-World-Task). It is based on the Python translation of the original MATLAB stimulus generation code from the Peduks study.
+
+This version generates **ambiguous** sequences. In these sequences it is hard to tell whether a change in the observations is a real change of the true mean or just noise. There are two ambiguous conditions:
+
+- **Ambiguous change-point (CP):** The true mean stays in one place and then jumps. The jumps are smaller than in the standard conditions, and the noise is higher. So the jumps are hard to separate from noise.
+- **Ambiguous random walk (RW):** The true mean moves slowly and continuously. The noisy observations are drawn around it.
+
+The code also creates two short practice sequences, and it selects the most ambiguous sequences out of many random ones.
+
+## Installation
+
+```bash
+pip install -r requirements.txt
+```
 
 ## Project Structure
 
 ```
 CoIn_stimulus_generation/
-├── coin_script_sequence_generation.py   # Main entry point — generates all sessions
-├── generate_laser_session.py             # Assembles a full session (multiple blocks)
-├── generate_laser_session_practice.py    # Same, but shorter practice sessions
-├── generate_mean_jumps.py                # Generates the underlying true mean trajectory
-├── generate_block_stimulus.py            # Fills each epoch with noisy laser observations
-├── generate_value_vec.py                 # Core: draws durations & values per epoch
-├── design_vola_stocha.py                 # Defines volatility/noise block conditions
-├── generate_coin_session_csv_files.py    # Exports sessions as PsychoPy-ready CSVs
-├── write_session_to_csv_file.py          # Per-block CSV writer
-├── write_exp_csv_file.py                 # Experiment-level CSV with block metadata
-├── write_exp_csv_file_with_tones.py      # Variant with tone stimuli
-├── laser_colours.py                      # Colour definitions for each condition
-├── analyse_session.py                    # Session analysis & summary statistics
-├── plot_session.py                       # Plotting utilities
-├── test_all.py                           # Full test suite
-└── sequences/                            # Generated output (gitignored)
+├── config.py                              # All parameters (sample rate, noise, jumps, durations, output path)
+│
+├── design_ambiguous_cp.py                 # Defines the ambiguous CP condition (noise, jump sizes, epoch durations)
+├── design_ambiguous_rw.py                 # Defines the ambiguous RW condition (walk speed, observation noise)
+├── generate_ambiguous_cp_session.py       # Generates a session of ambiguous CP blocks and writes CSVs
+├── generate_ambiguous_rw_session.py       # Generates a session of ambiguous RW blocks and writes CSVs
+│
+├── generate_mean_jumps.py                 # CP: true mean trajectory with jumps
+├── generate_block_stimulus.py             # CP: adds noisy observations to the true mean
+├── generate_value_vec.py                  # CP: draws observation durations and values per epoch
+├── generate_block_stimulus_random_walk.py # RW: true mean as a random walk + noisy observations
+│
+├── sequence_selection.py                  # Generates 50 CP and 50 RW sequences and keeps the 4 most ambiguous of each
+├── moving_average_check.py                # Moving average of the observations + interactive comparison plots
+├── generate_practice_sequences.py         # Two practice CP sequences (volatile, noisy)
+│
+├── write_session_to_csv_file.py           # Writes one CSV file per block
+├── plot_session.py                        # Plots true mean and observations of each block
+├── analyse_session.py                     # Plots movement and step sizes per block
+├── laser_colours.py                       # Colour definitions for the plots
+├── test_ambiguous_cp.py                   # Generates and plots an example CP session
+├── test_ambiguous_rw.py                   # Generates and plots an example RW session
+└── sequences/                             # Generated output (gitignored)
 ```
 
 ## How It Works
 
-1. **Design**: `design_vola_stocha.py` defines 4 block types with different volatility and noise levels.
-2. **Mean trajectory**: `generate_mean_jumps.py` creates the true underlying laser position that jumps at block-type-dependent rates.
-3. **Noisy observations**: `generate_value_vec.py` fills each stable-mean epoch with noisy observation values. Durations are drawn from a truncated exponential distribution (hard bounds: 6–60 frames at 60 Hz). Values are drawn from a normal distribution around the current true mean.
-4. **Assembly**: `generate_block_stimulus.py` stitches epochs together into full blocks. `generate_laser_session.py` combines blocks into sessions.
-5. **Export**: CSV files are written per-block with columns `true_pos`, `obs_pos`, `true_var` (one row per frame at 60 Hz).
+### Ambiguous change-point (CP)
+
+1. **Design:** `design_ambiguous_cp.py` reads the CP parameters from `config.py`.
+2. **True mean:** `generate_mean_jumps.py` creates the true laser position. It stays in one place for a number of observations (drawn from `DUR_MEAN_STD_MIN_MAX_AMBIGUOUS_CP`) and then jumps by one of the values in `JUMP_VALUE_SET_AMBIGUOUS_CP`.
+3. **Observations:** `generate_block_stimulus.py` and `generate_value_vec.py` fill each epoch with noisy observations. Each observation is shown for a number of frames drawn from a truncated exponential distribution (`JUMP_DURATION_*_SEC`). Its value is drawn from a normal distribution around the true mean with `NOISE_STD_AMBIGUOUS_CP`.
+
+### Ambiguous random walk (RW)
+
+1. **Design:** `design_ambiguous_rw.py` reads the RW parameters from `config.py`.
+2. **Stimulus:** `generate_block_stimulus_random_walk.py` moves the true mean by a small random step every frame (`SIGMA_STREAM_AMBIGUOUS_RW`). A new noisy observation (`SIGMA_OBS_AMBIGUOUS_RW`) is drawn after jittered intervals, using the same duration settings as CP (`JUMP_DURATION_*_SEC`).
+
+### Sequence selection
+
+`sequence_selection.py` makes sure that the final sequences are really ambiguous:
+
+1. It generates 50 CP and 50 RW sequences (seeds 0–49), each with one block.
+2. For each sequence it computes a weighted moving average of the observations. The observations are grouped in blocks of 3 (weights 0.1, 0.3, 0.6, newest counts most).
+3. It finds periods where this average is more than 10° (half of the 20° shield) away from the true mean, in the same direction. Periods shorter than 30 frames are ignored.
+4. Each sequence gets a score: the sum of the squared period durations. So long periods count much more than short ones.
+5. The 4 sequences with the highest score are kept for each condition. Each one is saved twice: once as it is and once rotated by 180° on the circle (for a second repetition that looks different).
+
+### Output format
+
+Each CSV file is one block, with one row per frame (60 Hz):
+
+| Column     | Meaning                                  |
+| ---------- | ---------------------------------------- |
+| `true_pos` | True mean position in degrees (0–359)    |
+| `obs_pos`  | Shown observation in degrees (0–359)     |
+| `true_var` | Noise standard deviation in degrees      |
 
 ## Configuration
 
-All high-level experimental parameters are centralized in `config.py`. You can adjust:
+All parameters are in `config.py`:
 
-- **`SAMPLE_RATE`**: Default is 60Hz.
-- **Session Durations**: Change `blockDurationMin` for `MAIN_SESSION`, `ONLINE_TRAINING_SESSION`, and `PRACTICE_SESSION` in minutes.
-- **Jump Limits**: Adjust `JUMP_DURATION_MEAN_SEC`, `JUMP_DURATION_MIN_SEC`, and `JUMP_DURATION_MAX_SEC` to manipulate the distributions for the time the laser stays in one place.
-- **Block Properties**: Override the number of blocks per session type, or the base noise levels (`NOISE_STD_LOW` and `NOISE_STD_HIGH`).
-- **Version/Output Control**: The `VERSION` prefix modifies the output folder/file names (e.g. `v4`).
-- **Export Path**: Modify `OUTPUT_DIR` (defaults to `sequences/`). _💡 Hint: You can provide an absolute path here to generate sequences directly into your PsychoPy/task codebase's resources folder!_
+- **`SAMPLE_RATE`:** Frames per second (default 60).
+- **`MAIN_SESSION['blockDurationMin']`:** Block length in minutes (default 3). Used for both ambiguous conditions.
+- **`JUMP_DURATION_MEAN_SEC`, `_MIN_SEC`, `_MAX_SEC`:** How long each observation is shown.
+- **Ambiguous CP:** `NOISE_STD_AMBIGUOUS_CP`, `JUMP_VALUE_SET_AMBIGUOUS_CP`, `DUR_MEAN_STD_MIN_MAX_AMBIGUOUS_CP`.
+- **Ambiguous RW:** `SIGMA_STREAM_AMBIGUOUS_RW`, `SIGMA_OBS_AMBIGUOUS_RW`.
+- **`OUTPUT_DIR`:** Where `generate_practice_sequences.py` and `moving_average_check.py` read and write files. **Change this to your own path** (for example the `resources/sequences` folder of your task code) or set it to `'sequences'`.
 
-If you modify these and want to ensure structural sequence logic still works smoothly, run `python test_all.py`.
+Some settings are set directly in the scripts:
+
+- `sequence_selection.py`: number of sequences, number of best sequences, shield size, moving average weights. It always writes to the local `sequences/` folder.
+- `generate_practice_sequences.py`: noise, epoch durations, jump values and seeds of the practice sequences.
 
 ## Usage
 
-```bash
-cd CoIn_stimulus_generation
-python coin_script_sequence_generation.py
-```
-
-This generates all session types (practice, online training, baseline, main) and exports counterbalanced CSV files into `sequences/`.
-
-## Running Tests
+Generate the final ambiguous sequences:
 
 ```bash
-cd CoIn_stimulus_generation
-python test_all.py
+python sequence_selection.py
 ```
 
-## Changes from Original MATLAB
+This writes `ambiguous_cp_final_block1–4.csv`, `ambiguous_rw_final_block1–4.csv` and their `_rot180` versions to `sequences/`. The plots of the selected sequences (interactive HTML) are saved in `sequences/selection_plots/`.
 
-### Truncation Fix
+Generate the practice sequences:
 
-**Affected files**: `generate_value_vec.py`, `generate_block_stimulus_random_walk.py`
+```bash
+python generate_practice_sequences.py
+```
 
-#### The Problem
+Generate and plot an example session (to check the parameters):
 
-`generate_value_vec` draws observation durations from a truncated exponential distribution (bounded to [6, 60] frames) until the total exceeds the epoch length. It then sliced the overshoot off the last duration to fit exactly — e.g. a legally drawn 8-frame duration could become 1 frame if the overshoot was 7. This violated the 6-frame (100 ms) hard lower bound.
+```bash
+python test_ambiguous_cp.py
+python test_ambiguous_rw.py
+```
 
-The bug occurred at every epoch boundary (every time the true mean jumps), affecting ~50 seams per 3-minute block. Testing confirmed 1-frame observations in 22 out of 72 generated CSV files.
+All sequences use fixed seeds, so running the scripts again gives the same sequences.
 
-#### The Fix (Merge Approach)
-
-The overshoot is corrected _before_ values are painted. If trimming the last duration drops it below `min_dur`, the fragment is removed and its frames are absorbed into the preceding duration. Old logic is preserved as comments.
-
-#### Design Considerations
-
-The merge causes the predecessor observation to last slightly longer than its original exponential draw (~9 extra frames on average). This affects ~8% of observations per block (the last observation of each epoch). However, this stretch falls well within the natural variance of the exponential distribution (mean=18, range=[6, 60]), making it indistinguishable from normal variation in both participant perception and statistical analysis.
-
-#### Alternative Approaches Considered
-
-| Approach           | How it works                                                         | Trade-off                                                         |
-| ------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **Merge** (chosen) | Absorb sub-minimum tail into predecessor                             | One observation per epoch is slightly longer                      |
-| **Fit-from-below** | Stop drawing early, stretch last duration to fill remainder          | Same magnitude of distortion, but requires rewriting the loop     |
-| **Redraw**         | Reject and regenerate entire duration sequence until it fits cleanly | Zero statistical bias, but unpredictable runtime for short epochs |
-
-The merge approach was chosen because it is minimal (3 lines), always terminates, and its statistical cost is unmeasurable in practice. The redraw approach is the only statistically "pure" option but introduces complexity and performance risk for no practical gain.
