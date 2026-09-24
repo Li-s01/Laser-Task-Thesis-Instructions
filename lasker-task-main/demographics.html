@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Demographics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: white; background: transparent; }
+    h1 { font-size: 1.4em; }
+    label { display: block; margin: 12px 0 4px; }
+    input, select { font-size: 1em; padding: 4px 8px; width: 100%; max-width: 320px; }
+    button { margin-top: 24px; padding: 10px 24px; font-size: 1em; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Demographics</h1>
+
+  <form id="demographics-form">
+    <label for="age">Age:</label>
+    <input type="number" id="age" name="age" min="18" max="99" required>
+
+    <label for="gender">Gender:</label>
+    <select id="gender" name="gender" required>
+      <option value="">-- please select --</option>
+      <option value="female">Female</option>
+      <option value="male">Male</option>
+      <option value="non-binary">Non-binary / third gender</option>
+      <option value="self-describe">Prefer to self-describe</option>
+      <option value="prefer-not">Prefer not to say</option>
+    </select>
+
+    <label for="handedness">Dominant hand:</label>
+    <select id="handedness" name="handedness" required>
+      <option value="">-- please select --</option>
+      <option value="right">Right</option>
+      <option value="left">Left</option>
+      <option value="ambidextrous">Ambidextrous</option>
+    </select>
+
+    <button type="submit">Continue</button>
+  </form>
+</body>
+</html>
